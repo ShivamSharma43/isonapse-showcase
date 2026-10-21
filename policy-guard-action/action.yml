@@ -1,0 +1,77 @@
+name: Isonapse policy guard
+description: >-
+  Review gate for agent-governance changes: classifies Isonapse policy edits as
+  widening or tightening, validates them with the real engine, and verifies
+  signed witness evidence against an append-only anchor log.
+author: Shivam Sharma
+branding: {icon: shield, color: purple}
+
+inputs:
+  policy:
+    description: Policy file to guard (repo-relative).
+    default: .isonapse/policy.lua
+  base-ref:
+    description: Git ref to compare against (defaults to the PR base).
+    default: ''
+  approve-label:
+    description: PR label that acknowledges a reviewed widening.
+    default: isonapse-widening-approved
+  engine-check:
+    description: Also boot the real Isonapse engine against the policy (Linux x86_64 runners).
+    default: 'true'
+  evidence-db:
+    description: Optional exported witness.db to verify (e.g. an agent run's evidence committed with the PR).
+    default: ''
+  evidence-identity:
+    description: Directory holding the chain's verifying_key.pem.
+    default: .isonapse/evidence/identity
+  anchors:
+    description: Append-only anchor log committed to the repository.
+    default: .isonapse/evidence/anchors.jsonl
+
+runs:
+  using: composite
+  steps:
+    - name: Set up tools
+      shell: bash
+      run: python3 -m pip install --quiet 'lupa==2.*'
+
+    - name: Policy diff (widening vs tightening)
+      if: hashFiles(inputs.policy) != ''
+      shell: bash
+      env:
+        BASE_REF: ${{ inputs.base-ref || github.base_ref || 'HEAD~1' }}
+        APPROVED: ${{ contains(github.event.pull_request.labels.*.name, inputs.approve-label) }}
+      run: |
+        git fetch --no-tags --depth=50 origin "$BASE_REF" 2>/dev/null || true
+        base_file="$(mktemp)"
+        git show "origin/$BASE_REF:${{ inputs.policy }}" > "$base_file" 2>/dev/null \
+          || git show "$BASE_REF:${{ inputs.policy }}" > "$base_file" 2>/dev/null \
+          || rm -f "$base_file"
+        extra=()
+        [ "$APPROVED" = "true" ] && extra+=(--allow-widening)
+        python3 "${{ github.action_path }}/isonapse_ci.py" diff \
+          --base "${base_file:-/nonexistent}" --head "${{ inputs.policy }}" \
+          --label "${{ inputs.policy }}" "${extra[@]}"
+
+    - name: Install Isonapse (signed installer)
+      if: inputs.engine-check == 'true' || inputs.evidence-db != ''
+      shell: bash
+      run: |
+        curl -fsSL https://github.com/Isonapse/isonapse-public/releases/latest/download/install.sh | sh
+        echo "$HOME/.isonapse/bin" >> "$GITHUB_PATH"
+
+    - name: Validate with the real engine
+      if: inputs.engine-check == 'true' && hashFiles(inputs.policy) != ''
+      shell: bash
+      run: python3 "${{ github.action_path }}/isonapse_ci.py" load "${{ inputs.policy }}"
+
+    - name: Verify and anchor evidence
+      if: inputs.evidence-db != ''
+      shell: bash
+      run: |
+        write=()
+        [ "${{ github.event_name }}" = "push" ] && write+=(--write-anchor)
+        python3 "${{ github.action_path }}/isonapse_ci.py" evidence \
+          --db "${{ inputs.evidence-db }}" --identity "${{ inputs.evidence-identity }}" \
+          --anchors "${{ inputs.anchors }}" "${write[@]}"

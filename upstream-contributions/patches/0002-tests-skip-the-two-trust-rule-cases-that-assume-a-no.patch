@@ -1,0 +1,62 @@
+From 4c1b9e578056333beec572bdf97daa51b61d31d0 Mon Sep 17 00:00:00 2001
+From: Shivam-Sharma <shivamsharmaxd43@gmail.com>
+Date: Tue, 20 Oct 2026 13:44:49 +0000
+Subject: [PATCH 2/4] tests: skip the two trust-rule cases that assume a
+ non-root uid
+
+As root, the fixture's 'user-owned' sticky/group directory is root-owned,
+which the rule tolerates by design, so both packages failed 2 tests in
+root containers (and packages.py, which runs them with check=True).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TnQvGeyaju6t8dVH4gy5it
+---
+ adapter-toolkit/python/tests/test_adk.py     | 2 ++
+ adapter-toolkit/typescript/tests/adk.test.js | 4 ++--
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/adapter-toolkit/python/tests/test_adk.py b/adapter-toolkit/python/tests/test_adk.py
+index dcb3701..9c3a2d0 100644
+--- a/adapter-toolkit/python/tests/test_adk.py
++++ b/adapter-toolkit/python/tests/test_adk.py
+@@ -390,6 +390,7 @@ class TrustRuleTests(unittest.TestCase):
+             self.assertTrue(fired, "the injected lstat result was used")
+         self.assert_verdict("restored layout", L["link"], L["pin"], "ok", L["hook"])
+ 
++    @unittest.skipIf(os.geteuid() == 0, "as root, the 'user-owned' fixture is root-owned, which the trust rule tolerates by design")
+     def test_world_writable_sticky_and_foreign_owned_ancestry_is_refused(self):
+         base = self.scratch()
+         self.directory(os.path.join(base, "ww"), 0o777)
+@@ -518,6 +519,7 @@ class TrustRuleTests(unittest.TestCase):
+         self.assertEqual((after.st_ino, after.st_mtime), (inode, 1), "the touch happened on the same inode")
+         self.assert_verdict("the touched Hook verifies on the next event", L["link"], L["pin"], "ok", L["hook"])
+ 
++    @unittest.skipIf(os.geteuid() == 0, "as root, the 'user-owned' fixture is root-owned, which the trust rule tolerates by design")
+     def test_per_platform_writer_group_rule_simulated(self):
+         uid = UID
+         cases = [
+diff --git a/adapter-toolkit/typescript/tests/adk.test.js b/adapter-toolkit/typescript/tests/adk.test.js
+index 22ecb9b..f6c82f1 100644
+--- a/adapter-toolkit/typescript/tests/adk.test.js
++++ b/adapter-toolkit/typescript/tests/adk.test.js
+@@ -253,7 +253,7 @@ test("#929 trusted writer group: macOS admin or the Linux private group is accep
+   await assertVerdict("restored layout",L.link,L.pin,"ok",L.hook);
+ });
+ 
+-test("#929 world-writable, sticky and foreign-owned ancestry is refused",async t=>{
++test("#929 world-writable, sticky and foreign-owned ancestry is refused",{skip: process.geteuid?.() === 0 && "as root, the user-owned fixture is root-owned, which the trust rule tolerates by design"},async t=>{
+   const base=await scratch(t);
+   await directory(join(base,"ww"),0o777);
+   await file(join(base,"ww/isonapse-hook"),GENUINE);
+@@ -380,7 +380,7 @@ test("#929 a Hook touched in place after the walk is refused (same inode)",async
+   await assertVerdict("the touched Hook verifies on the next event",L.link,L.pin,"ok",L.hook);
+ });
+ 
+-test("#929 per-platform writer-group rule (simulated platform, ids and stats)",async t=>{
++test("#929 per-platform writer-group rule (simulated platform, ids and stats)",{skip: process.geteuid?.() === 0 && "as root, the user-owned fixture is root-owned, which the trust rule tolerates by design"},async t=>{
+   const egid=process.getegid;
+   const cases=[
+     // [label, platform, egid, Cellar {uid,gid,mode}, outcome]
+-- 
+2.43.0
+

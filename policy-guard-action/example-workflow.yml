@@ -1,0 +1,31 @@
+# .github/workflows/isonapse-guard.yml — drop into any repository that commits
+# an Isonapse project policy (.isonapse/policy.lua).
+name: isonapse-guard
+on:
+  pull_request:
+    paths: ['.isonapse/**']
+  push:
+    branches: [main]
+    paths: ['.isonapse/**']
+
+permissions:
+  contents: write        # push: append to the anchor log
+  pull-requests: read    # read the approval label
+
+jobs:
+  guard:
+    runs-on: ubuntu-24.04   # Isonapse ships x86_64 Linux builds
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: ./tools/policy-guard-action   # or <owner>/isonapse-policy-guard@v1
+        with:
+          policy: .isonapse/policy.lua
+          evidence-db: .isonapse/evidence/witness.db   # optional
+      - name: Commit new anchor (main only)
+        if: github.event_name == 'push'
+        run: |
+          git config user.name isonapse-guard
+          git config user.email isonapse-guard@users.noreply.github.com
+          git add .isonapse/evidence/anchors.jsonl
+          git diff --cached --quiet || git commit -m "isonapse: anchor witness head" && git push

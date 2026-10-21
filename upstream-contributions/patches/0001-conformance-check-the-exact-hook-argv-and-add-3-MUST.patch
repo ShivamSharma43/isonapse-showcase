@@ -1,0 +1,176 @@
+From f1064367a1252e19bc84808094d9958be9fa9fa2 Mon Sep 17 00:00:00 2001
+From: Shivam-Sharma <shivamsharmaxd43@gmail.com>
+Date: Tue, 20 Oct 2026 13:44:48 +0000
+Subject: [PATCH 1/4] conformance: check the exact hook argv and add 3
+ MUST-rule fixtures
+
+The handshake check only looked at --host/--adapter-protocol, so an adapter
+that sent the wrong native event (or none) passed; expectedHookEvent was
+never read. New fixtures cover an unknown decision, a missing
+protocolVersion and a post-action deny without updatedOutput. Each was
+passed by a deliberately wrong adapter before this change.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TnQvGeyaju6t8dVH4gy5it
+---
+ adapter-toolkit/README.md                     |  2 +-
+ .../fixtures/missing-protocol-version.json    | 23 ++++++++++++++++
+ .../fixtures/post-deny-without-output.json    | 26 +++++++++++++++++++
+ .../fixtures/unknown-decision.json            | 24 +++++++++++++++++
+ adapter-toolkit/conformance/run.py            | 19 ++++++--------
+ 5 files changed, 82 insertions(+), 12 deletions(-)
+ create mode 100644 adapter-toolkit/conformance/fixtures/missing-protocol-version.json
+ create mode 100644 adapter-toolkit/conformance/fixtures/post-deny-without-output.json
+ create mode 100644 adapter-toolkit/conformance/fixtures/unknown-decision.json
+
+diff --git a/adapter-toolkit/README.md b/adapter-toolkit/README.md
+index 933307a..c4b9e71 100644
+--- a/adapter-toolkit/README.md
++++ b/adapter-toolkit/README.md
+@@ -163,7 +163,7 @@ and what the model sees.
+ - `HOST-PROFILES.md`: operator admission, compatibility and contribution route.
+ - `python/` and `typescript/`: installable libraries, native starter generators,
+   callback APIs and executable package tests.
+-- `conformance/`: standalone runner plus the same 15 golden fixtures used by Isonapse.
++- `conformance/`: standalone runner plus 18 golden fixtures (the 15 used by Isonapse and 3 that close gaps: unknown decision, missing protocolVersion, post-action deny without a replacement).
+ - `template/`: executable Python scaffold that is green before customization.
+ - `reference/hermes/` and `reference/pi/`: shipped host-side glue for comparison.
+ - `reference/codex/`: the OpenAI Codex CLI hook-command reference adapter,
+diff --git a/adapter-toolkit/conformance/fixtures/missing-protocol-version.json b/adapter-toolkit/conformance/fixtures/missing-protocol-version.json
+new file mode 100644
+index 0000000..4c73bcb
+--- /dev/null
++++ b/adapter-toolkit/conformance/fixtures/missing-protocol-version.json
+@@ -0,0 +1,23 @@
++{
++  "case": "missing-protocol-version",
++  "description": "Response table: protocolVersion is mandatory and always 1; a response without it is no authorization.",
++  "event": "PreToolUse",
++  "hookRequest": {
++    "session_id": "conformance-missing-protocol-version",
++    "hook_event_name": "PreToolUse",
++    "tool_name": "Bash",
++    "tool_use_id": "toolu_conformance_missing_protocol_version",
++    "tool_input": {
++      "command": "printf original >>\"$ISONAPSE_ADAPTER_EFFECT_LOG\""
++    }
++  },
++  "hookStdout": {
++    "decision": "allow"
++  },
++  "hookExit": 0,
++  "expect": {
++    "exitStatus": "refused",
++    "effectLog": "",
++    "modelOutput": ""
++  }
++}
+diff --git a/adapter-toolkit/conformance/fixtures/post-deny-without-output.json b/adapter-toolkit/conformance/fixtures/post-deny-without-output.json
+new file mode 100644
+index 0000000..e06c4c8
+--- /dev/null
++++ b/adapter-toolkit/conformance/fixtures/post-deny-without-output.json
+@@ -0,0 +1,26 @@
++{
++  "case": "post-deny-without-output",
++  "description": "Rules 6/7: a post-action deny without updatedOutput must withhold the result; the original result must not reach the model.",
++  "event": "PostToolUse",
++  "hookRequest": {
++    "session_id": "conformance-post-deny-without-output",
++    "hook_event_name": "PostToolUse",
++    "tool_name": "Bash",
++    "tool_use_id": "toolu_conformance_post_deny_without_output",
++    "tool_input": {
++      "command": "cat /etc/service.env"
++    },
++    "tool_response": "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIfixture"
++  },
++  "hookStdout": {
++    "protocolVersion": 1,
++    "decision": "deny",
++    "reason": "result withheld by policy"
++  },
++  "hookExit": 0,
++  "expect": {
++    "exitStatus": "refused",
++    "effectLog": "",
++    "modelOutput": ""
++  }
++}
+diff --git a/adapter-toolkit/conformance/fixtures/unknown-decision.json b/adapter-toolkit/conformance/fixtures/unknown-decision.json
+new file mode 100644
+index 0000000..5b6f07f
+--- /dev/null
++++ b/adapter-toolkit/conformance/fixtures/unknown-decision.json
+@@ -0,0 +1,24 @@
++{
++  "case": "unknown-decision",
++  "description": "Rule 3: a decision outside allow/deny/ask/unavailable is no authorization; the action must not run.",
++  "event": "PreToolUse",
++  "hookRequest": {
++    "session_id": "conformance-unknown-decision",
++    "hook_event_name": "PreToolUse",
++    "tool_name": "Bash",
++    "tool_use_id": "toolu_conformance_unknown_decision",
++    "tool_input": {
++      "command": "printf original >>\"$ISONAPSE_ADAPTER_EFFECT_LOG\""
++    }
++  },
++  "hookStdout": {
++    "protocolVersion": 1,
++    "decision": "defer"
++  },
++  "hookExit": 0,
++  "expect": {
++    "exitStatus": "refused",
++    "effectLog": "",
++    "modelOutput": ""
++  }
++}
+diff --git a/adapter-toolkit/conformance/run.py b/adapter-toolkit/conformance/run.py
+index ac9c710..cb52467 100644
+--- a/adapter-toolkit/conformance/run.py
++++ b/adapter-toolkit/conformance/run.py
+@@ -21,13 +21,16 @@ REQUIRED_CASES = (
+     "hook-crash-fail-closed",
+     "hung-hook-fail-closed",
+     "key-removal-rewrite",
++    "missing-protocol-version",
+     "output-rewrite",
+     "oversized-output",
+     "permit-with-rewrite",
++    "post-deny-without-output",
+     "protocol-version-mismatch",
+     "session-end-lifecycle",
+     "stop-lifecycle",
+     "unavailable-fail-closed",
++    "unknown-decision",
+ )
+ ALL_CAPABILITIES = {"can_ask", "can_rewrite_input", "can_rewrite_output"}
+ 
+@@ -145,17 +148,11 @@ def run_case(
+             failures.append("adapter never invoked the hook")
+         else:
+             argv = json.loads(argv_log.read_text(encoding="utf-8"))
+-            try:
+-                host_index = argv.index("--host")
+-                protocol_index = argv.index("--adapter-protocol")
+-                handshake_ok = (
+-                    argv.count("--host") == 1
+-                    and argv.count("--adapter-protocol") == 1
+-                    and argv[host_index + 1] == expected_host
+-                    and argv[protocol_index + 1] == "1"
+-                )
+-            except (ValueError, IndexError):
+-                handshake_ok = False
++            # Rule 1: the native event, the registered host id and protocol 1,
++            # exactly. Checking only the flags let an adapter send the wrong
++            # event (or none) and still pass.
++            expected_event = fixture.get("expectedHookEvent", fixture["event"])
++            handshake_ok = argv == [expected_event, "--host", expected_host, "--adapter-protocol", "1"]
+             if not handshake_ok:
+                 failures.append(f"wrong hook handshake: {argv!r}")
+         if request_log.exists() and request_log.read_text(encoding="utf-8") != request:
+-- 
+2.43.0
+

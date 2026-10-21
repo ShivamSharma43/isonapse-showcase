@@ -1,0 +1,39 @@
+From 6531c387e79c7ff9383184272043b49b8adba9fd Mon Sep 17 00:00:00 2001
+From: Shivam-Sharma <shivamsharmaxd43@gmail.com>
+Date: Tue, 20 Oct 2026 13:44:49 +0000
+Subject: [PATCH 3/4] adk(python): keep check_version inside the outcome
+ contract
+
+Invalid UTF-8 in the --version answer raised UnicodeDecodeError out of
+hook_command instead of a hook-protocol refusal, and \d accepted non-ASCII
+digits (e.g. Arabic-Indic) that the TypeScript package rejects.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TnQvGeyaju6t8dVH4gy5it
+---
+ adapter-toolkit/python/src/isonapse_hook_adk/__init__.py | 9 +++++++--
+ 1 file changed, 7 insertions(+), 2 deletions(-)
+
+diff --git a/adapter-toolkit/python/src/isonapse_hook_adk/__init__.py b/adapter-toolkit/python/src/isonapse_hook_adk/__init__.py
+index 8d0a4b5..194447d 100644
+--- a/adapter-toolkit/python/src/isonapse_hook_adk/__init__.py
++++ b/adapter-toolkit/python/src/isonapse_hook_adk/__init__.py
+@@ -530,8 +530,13 @@ class Client:
+         # Execute the verified real path, never the configured link (#929).
+         executable = installed.verify()
+         raw = _exchange([str(executable), "--version"], b"", timeout)
+-        value = raw.decode("utf-8", errors="strict").strip()
+-        match = re.fullmatch(r"isonapse-hook (\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.+-]+)?", value)
++        # A malformed answer is a protocol refusal, never a raw exception that
++        # escapes hook_command's outcome contract. ASCII digits only.
++        try:
++            value = raw.decode("utf-8", errors="strict").removesuffix("\n")
++        except UnicodeDecodeError:
++            raise Unavailable("Installed Hook version is incompatible with ADK v1", code="hook-protocol") from None
++        match = re.fullmatch(r"isonapse-hook ([0-9]+)\.([0-9]+)\.([0-9]+)(?:[-+][A-Za-z0-9.+-]+)?", value)
+         if not match or tuple(map(int, match.groups())) < (0, 3, 0):
+             raise Unavailable("Installed Hook version is incompatible with ADK v1", code="hook-protocol")
+         return value
+-- 
+2.43.0
+

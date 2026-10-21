@@ -1,0 +1,104 @@
+From e00f3d9193d8ef669b5a75e14eb65cf09c479dd7 Mon Sep 17 00:00:00 2001
+From: Shivam-Sharma <shivamsharmaxd43@gmail.com>
+Date: Tue, 20 Oct 2026 13:44:49 +0000
+Subject: [PATCH 4/4] docs: fix contradictions found while building an adapter
+
+- codex README: a heuristic warning does exist; lifecycle timeouts per event
+- 06-file-patterns: six matcher shapes, not five
+- bug template: build string is +release.<sha>
+- README: adk-pin applies to every pin-file ADK host
+- HOST-PROFILES: point to the host-adapter issue template
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TnQvGeyaju6t8dVH4gy5it
+---
+ .github/ISSUE_TEMPLATE/bug-report.yml         |  2 +-
+ README.md                                     |  2 +-
+ adapter-toolkit/HOST-PROFILES.md              |  2 +-
+ adapter-toolkit/reference/codex/README.md     | 10 ++++++----
+ examples/policies/fields/06-file-patterns.lua |  2 +-
+ 5 files changed, 10 insertions(+), 8 deletions(-)
+
+diff --git a/.github/ISSUE_TEMPLATE/bug-report.yml b/.github/ISSUE_TEMPLATE/bug-report.yml
+index 4e8ef6e..459d0ae 100644
+--- a/.github/ISSUE_TEMPLATE/bug-report.yml
++++ b/.github/ISSUE_TEMPLATE/bug-report.yml
+@@ -22,7 +22,7 @@ body:
+     attributes:
+       label: Version
+       description: Output of `isonapse --version`
+-      placeholder: isonapse 0.3.0-beta+main.abc1234
++      placeholder: isonapse 0.3.0-beta+release.abc1234
+     validations:
+       required: true
+   - type: dropdown
+diff --git a/README.md b/README.md
+index ca39fe0..5a836ce 100644
+--- a/README.md
++++ b/README.md
+@@ -194,7 +194,7 @@ restart approves every monitored file as it then is.
+ 
+     brew upgrade isonapse        # or rerun the script installer
+     isonapse hook restart        # moves the daemon onto the installed build
+-    isonapse hook adk-pin        # Codex CLI only: re-pin the upgraded Hook
++    isonapse hook adk-pin        # ADK hosts with a pin file (e.g. Codex CLI): re-pin the upgraded Hook
+     isonapse hook status
+ 
+ After an authorized personal-plugin upgrade, rerun `isonapse hook init` once
+diff --git a/adapter-toolkit/HOST-PROFILES.md b/adapter-toolkit/HOST-PROFILES.md
+index b446b69..9beb2e9 100644
+--- a/adapter-toolkit/HOST-PROFILES.md
++++ b/adapter-toolkit/HOST-PROFILES.md
+@@ -206,7 +206,7 @@ does not attest imported modules, plugins or already loaded code. The operator
+ must control and review the whole runtime installation. File pins and process
+ identity do not isolate malicious code running as the installation owner.
+ 
+-To add a host, open a public feature request containing:
++To add a host, open an issue with the "Host adapter or profile" template containing:
+ 
+ - upstream host/project and version range;
+ - stable session and tool-call identity sources;
+diff --git a/adapter-toolkit/reference/codex/README.md b/adapter-toolkit/reference/codex/README.md
+index 5bd5be5..1fc86ec 100644
+--- a/adapter-toolkit/reference/codex/README.md
++++ b/adapter-toolkit/reference/codex/README.md
+@@ -31,7 +31,7 @@ update.
+ | Approval (`ask`) | **no**: Codex parses `ask` but does not support it and lets the tool run | never declared; an `ask` is a deny |
+ | Output replacement | **no exact replacement**: PostToolUse can only withhold a result | never declared; any required replacement or refusal is `decision:"block"` |
+ | Prompt boundary | not wired | not declared |
+-| Lifecycle | SessionStart, SessionEnd (advisory, 1-3 s budget) | acknowledged; cannot block |
++| Lifecycle | SessionStart (60 s, two 25 s exchanges), SessionEnd (advisory, Codex caps it at 3 s) | acknowledged; cannot block |
+ 
+ Register the profile with `--input-replacement` only. Codex keeps the raw
+ tool result when a PostToolUse hook withholds it; the model sees the block
+@@ -413,9 +413,11 @@ and is logged only at info level.
+   later hook's rewrite are invisible before the effect.
+ - PostToolUse fires for commands that exit non-zero (the result is bound and
+   witnessed) but not when Codex itself failed to run the tool.
+-- Nothing warns you when a registered Codex host stops being governed, for
+-  example after an edit of its definitions left them untrusted (observed on
+-  codex-cli 0.155.1, not a maintained test).
++- Only a heuristic warns you when a registered Codex host stops being
++  governed, for example after an edit of its definitions left them untrusted
++  (observed on codex-cli 0.155.1, not a maintained test): `hook status` and
++  `hook report --host` flag a changed `hooks.json` with no tool decision since
++  (see "Upgrade" above). A host that runs no hooks leaves no other trace.
+ 
+ ## Proven
+ 
+diff --git a/examples/policies/fields/06-file-patterns.lua b/examples/policies/fields/06-file-patterns.lua
+index c10175c..f096d4e 100644
+--- a/examples/policies/fields/06-file-patterns.lua
++++ b/examples/policies/fields/06-file-patterns.lua
+@@ -20,7 +20,7 @@
+ --    Useful for blocking accidental megabyte-scale writes from agents
+ --    that thought they were appending a line.
+ --
+--- The matcher is intentionally NARROW (no full regex). Five shapes:
++-- The matcher is intentionally NARROW (no full regex). Six shapes:
+ --
+ --   name             — bare basename match (no slashes).
+ --   **/name          — any path whose final component equals `name`.
+-- 
+2.43.0
+
